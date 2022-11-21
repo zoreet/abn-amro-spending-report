@@ -36,9 +36,15 @@
             show-expand
             hide-default-footer
           >
+            <template v-slot:header.category="{ header }">
+              {{ header.text }}
+              <div class="header-summary">
+                {{ expensesByCategory.length }} categories
+              </div>
+            </template>
             <template v-slot:header.ammount="{ header }">
               {{ header.text }}
-              <div>Total {{ totalSpent | price }}</div>
+              <div class="header-summary">Total {{ totalSpent | price }}</div>
             </template>
             <template v-slot:item.ammount="{ item }">
               {{ item.ammount | price }}
@@ -399,5 +405,15 @@ export default {
 
 .v-data-table-header th {
   font-size: 16px !important;
+  padding-bottom: 32px !important;
+  padding-top: 12px !important;
+  position: relative;
+}
+
+.header-summary {
+  font-size: 12px;
+  font-weight: 400;
+  position: absolute;
+  bottom: 12px;
 }
 </style>
