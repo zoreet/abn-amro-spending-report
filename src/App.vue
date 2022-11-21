@@ -343,8 +343,11 @@ export default {
             merchant = transationInfo.name || transationInfo.match;
             category = transationInfo.category;
           } else {
-            merchant = "NO_MERCHANT_FOUND";
             category = "NO_CATEGORY_FOUND";
+            merchant = columns[7].substring(
+              columns[7].indexOf("Naam: "),
+              columns[7].length
+            );
           }
 
           let date = new Date(
@@ -365,7 +368,7 @@ export default {
         })
         .filter((row) => {
           return (
-            row.category !== "internal" &&
+            row.category !== "ignore" &&
             row.category !== "creditcard" &&
             row.merchant !== "Flatex Bank"
           );
@@ -378,13 +381,13 @@ export default {
         let merchant;
         let category;
         let date = columns[0].split("/");
-        date = new Date(`${date[2]}-${date[1]}-${date[0]}`);
+        date = new Date(`${date[2]}-${date[0]}-${date[1]}`);
 
         if (transationInfo) {
           merchant = transationInfo.name || transationInfo.match;
           category = transationInfo.category;
         } else {
-          merchant = "NO_MERCHANT_FOUND";
+          merchant = columns[1];
           category = "NO_CATEGORY_FOUND";
         }
 
