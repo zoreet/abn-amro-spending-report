@@ -26,16 +26,26 @@
           </div>
           <v-data-table
             :headers="headersForCategoriesTable"
-            :items="expenses"
+            :items="expensesByCategory"
             :single-expand="singleExpand"
             :expanded.sync="expanded"
-            :items-per-page="expenses.length"
+            :items-per-page="expensesByCategory.length"
             :search="expensesSearch"
             sort-by="ammount"
             item-key="category"
             show-expand
             hide-default-footer
           >
+            <template v-slot:header.ammount="{ header }">
+              {{ header.text }}
+              <div>Total {{ totalSpent | price }}</div>
+            </template>
+            <template v-slot:item.ammount="{ item }">
+              {{ item.ammount | price }}
+            </template>
+            <template v-slot:item.percent="{ item }">
+              {{ (item.ammount / totalSpent) | percent }}
+            </template>
             <template v-slot:expanded-item="{ headers, item }">
               <td :colspan="headers.length" class="pa-12 grey darken-4">
                 <v-data-table
@@ -51,7 +61,30 @@
           </v-data-table>
         </div>
         <div v-else-if="expensesTab == 1" class="active-page pa-6">
-          Merchant
+          <v-data-table
+            :headers="headersForMerchantTable"
+            :items="expensesByMerchant"
+            :single-expand="singleExpand"
+            :expanded.sync="expanded"
+            :items-per-page="expensesByMerchant.length"
+            sort-by="ammount"
+            item-key="merchant"
+            show-expand
+            hide-default-footer
+          >
+            <template v-slot:expanded-item="{ headers, item }">
+              <td :colspan="headers.length" class="pa-12 grey darken-4">
+                <v-data-table
+                  :headers="headersForCategorySubtable"
+                  :items="transactionMerchants[item.merchant]"
+                  :items-per-page="transactionMerchants[item.merchant].length"
+                  sort-by="ammount"
+                  hide-default-footer
+                  class="rounded"
+                ></v-data-table>
+              </td>
+            </template>
+          </v-data-table>
         </div>
       </v-container>
       <div v-else>Loading...</div>
@@ -110,9 +143,9 @@ output: {{ output }}
 found {{ transactions.length }} transaction(s)
 
 totalEarned €{{ Math.round(totalEarned) }}
-totalSpent €{{ Math.round(totalSpent) }}
 net €{{ Math.round(totalEarned + totalSpent) }}
       </pre>
+      <pre>{{ transactions }}</pre>
     </v-main>
   </v-app>
 </template>
@@ -126,6 +159,7 @@ export default {
   components: {},
 
   data: () => ({
+    reportDuration: 18, //months
     expensesTab: 0,
     singleExpand: false,
     expanded: [],
@@ -135,6 +169,11 @@ export default {
     expensesSearch: "",
     headersForCategoriesTable: [
       { text: "Category", value: "category" },
+      { text: "Ammount", value: "ammount" },
+      { text: "Percent", value: "percent" },
+    ],
+    headersForMerchantTable: [
+      { text: "Merchant", value: "merchant" },
       { text: "Ammount", value: "ammount" },
       { text: "Percent", value: "percent" },
     ],
@@ -156,7 +195,7 @@ export default {
       }, 0);
     },
     totalSpent() {
-      return this.transactions.reduce((prev, current) => {
+      return this.expensesByCategory.reduce((prev, current) => {
         if (current && current.ammount < 0) {
           return prev + current.ammount;
         }
@@ -186,16 +225,47 @@ export default {
         result.push({
           category: category,
           ammount: ammount,
-          percent: this.formatPercent(ammount / this.totalSpent) + "%",
         });
       });
 
       return result;
     },
-    expenses() {
-      return this.transactionsGroupedByCategory
-        .filter((transaction) => transaction.ammount < 0)
-        .filter((transaction) => transaction.category !== "creditcard");
+    transactionMerchants() {
+      let result = {};
+
+      this.transactions.forEach((t) => {
+        if (!result[t.merchant]) {
+          result[t.merchant] = [];
+        }
+        result[t.merchant].push(t);
+      });
+
+      return result;
+    },
+    transactionsGroupedByMerchant() {
+      let result = [];
+      Object.keys(this.transactionMerchants).forEach((merchant) => {
+        let ammount = this.getTotalForCategory(
+          this.transactionMerchants[merchant]
+        );
+
+        result.push({
+          merchant: merchant,
+          ammount: ammount,
+        });
+      });
+
+      return result;
+    },
+    expensesByCategory() {
+      return this.transactionsGroupedByCategory.filter(
+        (transaction) => transaction.ammount < 0
+      );
+    },
+    expensesByMerchant() {
+      return this.transactionsGroupedByMerchant.filter(
+        (transaction) => transaction.ammount < 0
+      );
     },
   },
 
@@ -221,6 +291,14 @@ export default {
         ];
       }
     });
+  },
+  filters: {
+    price(number) {
+      return "€" + number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    },
+    percent(number) {
+      return Math.round(number * 1000) / 10 + "%";
+    },
   },
   methods: {
     processAbnAmroDebitReport(rawTxtData) {
@@ -253,7 +331,11 @@ export default {
           };
         })
         .filter((row) => {
-          return row.category !== "internal";
+          return (
+            row.category !== "internal" &&
+            row.category !== "creditcard" &&
+            row.merchant !== "Flatex Bank"
+          );
         });
     },
     processAbnAmroCreditReport(rawTxtData) {
@@ -300,11 +382,7 @@ export default {
         return current.ammount;
       }, 0);
 
-      // return Math.round((totalInCategory / this.totalSpent) * 10000) / 100;
       return Math.round(totalInCategory);
-    },
-    formatPercent(number) {
-      return Math.round(number * 10000) / 100;
     },
   },
 };
