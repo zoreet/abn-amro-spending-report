@@ -117,7 +117,11 @@ export default [
   { category: "entertainment", match: "OPENBARE BIBLIOT" },
   { category: "entertainment", match: "Bibliotheek" },
   { category: "entertainment", match: "Concertgebouw" },
-  { category: "entertainment", match: "P Pop" },
+  {
+    category: "entertainment",
+    name: "Shared account with the Pops",
+    match: "Naam: Hr P Pop",
+  },
   { category: "entertainment", match: "Pathe" },
   { category: "entertainment", match: "The New English Bookst" },
   { category: "entertainment", match: "Ticketmaster" },

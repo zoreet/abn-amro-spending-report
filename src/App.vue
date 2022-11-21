@@ -61,7 +61,14 @@
                   sort-by="ammount"
                   hide-default-footer
                   class="rounded"
-                ></v-data-table>
+                >
+                  <template v-slot:item.ammount="{ item }">
+                    {{ item.ammount | price }}
+                  </template>
+                  <template v-slot:item.date="{ item }">
+                    {{ item.date | date }}
+                  </template>
+                </v-data-table>
               </td>
             </template>
           </v-data-table>
@@ -141,17 +148,6 @@
           </v-expansion-panel-content>
         </v-expansion-panel>
       </v-expansion-panels> -->
-      <pre
-        >{{ allDataFiles.length }} file(s) found: {{ allDataFiles }}
-output: {{ output }}
-      </pre>
-      <pre v-if="transactions.length">
-found {{ transactions.length }} transaction(s)
-
-totalEarned €{{ Math.round(totalEarned) }}
-net €{{ Math.round(totalEarned + totalSpent) }}
-      </pre>
-      <pre>{{ transactions }}</pre>
     </v-main>
   </v-app>
 </template>
@@ -171,7 +167,6 @@ export default {
     expanded: [],
     transactions: [],
     allDataFiles: [],
-    output: "",
     expensesSearch: "",
     headersForCategoriesTable: [
       { text: "Category", value: "category" },
@@ -187,6 +182,7 @@ export default {
       { text: "merchant", value: "merchant" },
       { text: "ammount", value: "ammount" },
       { text: "date", value: "date" },
+      { text: "source", value: "source" },
     ],
   }),
 
@@ -279,8 +275,7 @@ export default {
     //load all data
     this.allDataFiles = require.context("./data", true, /./, "sync").keys();
     this.allDataFiles.forEach((fileName) => {
-      this.output = `\nLoading ${fileName}`;
-
+      console.log("loading", fileName);
       if (fileName.includes(".TAB")) {
         this.transactions = [
           ...this.transactions,
@@ -304,6 +299,29 @@ export default {
     },
     percent(number) {
       return Math.round(number * 1000) / 10 + "%";
+    },
+    date(date) {
+      const months = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+      ];
+      return (
+        date.getDate() +
+        " " +
+        months[date.getMonth()] +
+        " " +
+        date.getFullYear()
+      );
     },
   },
   methods: {
@@ -329,11 +347,20 @@ export default {
             category = "NO_CATEGORY_FOUND";
           }
 
+          let date = new Date(
+            columns[2].substring(0, 4) +
+              "-" +
+              columns[2].substring(4, 6) +
+              "-" +
+              columns[2].substring(6, 8)
+          );
+
           return {
             ammount: Number(columns[6].replace(/,/g, ".")),
-            date: columns[2],
+            date: date,
             merchant: merchant,
             category: category,
+            source: "debit",
           };
         })
         .filter((row) => {
@@ -347,14 +374,11 @@ export default {
     processAbnAmroCreditReport(rawTxtData) {
       return rawTxtData.split(/\r?\n/).map((row) => {
         let columns = row.split("\t");
-
-        if (columns.length < 7) {
-          return {};
-        }
-
-        let transationInfo = this.findCode(columns[7]);
+        let transationInfo = this.findCode(columns[1]);
         let merchant;
         let category;
+        let date = columns[0].split("/");
+        date = new Date(`${date[2]}-${date[1]}-${date[0]}`);
 
         if (transationInfo) {
           merchant = transationInfo.name || transationInfo.match;
@@ -365,10 +389,11 @@ export default {
         }
 
         return {
-          ammount: Number(columns[6].replace(/,/g, ".")),
-          date: columns[2],
+          ammount: -1 * Number(columns[2].replace(/,/g, ".").replace(/€/g, "")),
+          date: date,
           merchant: merchant,
           category: category,
+          source: "creditcard",
         };
       });
     },
