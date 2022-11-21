@@ -5,7 +5,7 @@
     </v-app-bar>
 
     <v-main>
-      <v-container class="mb-12">
+      <v-container class="mb-12" v-if="transactions.length">
         <h1>Expenses</h1>
         <v-tabs
           v-model="expensesTab"
@@ -17,10 +17,10 @@
         <div v-if="expensesTab == 0" class="active-page rounded-b">
           <v-data-table
             :headers="headersForCategoriesTable"
-            :items="transactionCategories"
+            :items="transactionsGroupedByCategory"
             :single-expand="singleExpand"
             :expanded.sync="expanded"
-            :items-per-page="transactionCategories.length"
+            :items-per-page="transactionsGroupedByCategory.length"
             item-key="category"
             show-expand
             hide-default-footer
@@ -29,10 +29,8 @@
               <td :colspan="headers.length" class="pa-12 grey darken-4">
                 <v-data-table
                   :headers="headersForCategorySubtable"
-                  :items="transactionsGroupedByCategory[item.category]"
-                  :items-per-page="
-                    transactionsGroupedByCategory[item.category].length
-                  "
+                  :items="transactionCategories[item.category]"
+                  :items-per-page="transactionCategories[item.category].length"
                   hide-default-footer
                   class="rounded"
                 ></v-data-table>
@@ -44,10 +42,11 @@
           Merchant
         </div>
       </v-container>
+      <div v-else>Loading...</div>
       <!-- <h1>Categories</h1>
       <v-data-table
         :headers="headersForCategoriesTable"
-        :items="transactionCategories"
+        :items="transactionsGroupedByCategory"
         :single-expand="singleExpand"
         :expanded.sync="expanded"
         item-key="category"
@@ -68,19 +67,19 @@
           <td :colspan="headers.length">
             <v-data-table
               :headers="headersForCategorySubtable"
-              :items="transactionsGroupedByCategory[item.category]"
+              :items="transactionCategories[item.category]"
             ></v-data-table>
           </td>
         </template>
       </v-data-table> -->
       <!-- <v-expansion-panels accordion>
         <v-expansion-panel
-          v-for="(categoryData, categoryName) in transactionsGroupedByCategory"
+          v-for="(categoryData, categoryName) in transactionCategories"
           :key="categoryName"
         >
           <v-expansion-panel-header
             >{{ categoryName }}
-            {{ getPercentForCategory(categoryData) }}</v-expansion-panel-header
+            {{ getTotalForCategory(categoryData) }}</v-expansion-panel-header
           >
           <v-expansion-panel-content>
             <v-data-table
@@ -123,7 +122,7 @@ export default {
     output: "",
     headersForCategoriesTable: [
       { text: "Category", value: "category" },
-      { text: "Ammount", value: "percent" },
+      { text: "Ammount", value: "ammount" },
     ],
     headersForCategorySubtable: [
       { text: "merchant", value: "merchant" },
@@ -151,7 +150,7 @@ export default {
         return prev;
       }, 0);
     },
-    transactionsGroupedByCategory() {
+    transactionCategories() {
       let result = {};
 
       this.transactions.forEach((t) => {
@@ -163,13 +162,13 @@ export default {
 
       return result;
     },
-    transactionCategories() {
+    transactionsGroupedByCategory() {
       let result = [];
-      Object.keys(this.transactionsGroupedByCategory).forEach((category) => {
+      Object.keys(this.transactionCategories).forEach((category) => {
         result.push({
           category: category,
-          percent: this.getPercentForCategory(
-            this.transactionsGroupedByCategory[category]
+          ammount: this.getTotalForCategory(
+            this.transactionCategories[category]
           ),
         });
       });
@@ -231,7 +230,7 @@ export default {
         return code.match.test(input);
       });
     },
-    getPercentForCategory(data) {
+    getTotalForCategory(data) {
       let totalInCategory = data.reduce((prev, current) => {
         if (prev) return prev + current.ammount;
 
