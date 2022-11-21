@@ -1,6 +1,6 @@
 <template>
   <v-app>
-    <v-app-bar app color="primary" dark>
+    <v-app-bar app color="secondary" dark>
       <div class="d-flex align-center">ABN Amro Spending Report</div>
     </v-app-bar>
 
@@ -9,18 +9,29 @@
         <h1>Expenses</h1>
         <v-tabs
           v-model="expensesTab"
-          background-color="secondary accent-4 mt-6 rounded-t"
+          background-color="primary accent-4 mt-6 rounded-t"
         >
           <v-tab>By Category</v-tab>
           <v-tab>By Merchant</v-tab>
         </v-tabs>
         <div v-if="expensesTab == 0" class="active-page rounded-b">
+          <div class="px-4">
+            <v-text-field
+              v-model="expensesSearch"
+              append-icon="mdi-magnify"
+              label="Search"
+              single-line
+              hide-details
+            ></v-text-field>
+          </div>
           <v-data-table
             :headers="headersForCategoriesTable"
-            :items="transactionsGroupedByCategory"
+            :items="expenses"
             :single-expand="singleExpand"
             :expanded.sync="expanded"
-            :items-per-page="transactionsGroupedByCategory.length"
+            :items-per-page="expenses.length"
+            :search="expensesSearch"
+            sort-by="ammount"
             item-key="category"
             show-expand
             hide-default-footer
@@ -31,6 +42,7 @@
                   :headers="headersForCategorySubtable"
                   :items="transactionCategories[item.category]"
                   :items-per-page="transactionCategories[item.category].length"
+                  sort-by="ammount"
                   hide-default-footer
                   class="rounded"
                 ></v-data-table>
@@ -120,9 +132,11 @@ export default {
     transactions: [],
     allDataFiles: [],
     output: "",
+    expensesSearch: "",
     headersForCategoriesTable: [
       { text: "Category", value: "category" },
       { text: "Ammount", value: "ammount" },
+      { text: "Percent", value: "percent" },
     ],
     headersForCategorySubtable: [
       { text: "merchant", value: "merchant" },
@@ -165,15 +179,23 @@ export default {
     transactionsGroupedByCategory() {
       let result = [];
       Object.keys(this.transactionCategories).forEach((category) => {
+        let ammount = this.getTotalForCategory(
+          this.transactionCategories[category]
+        );
+
         result.push({
           category: category,
-          ammount: this.getTotalForCategory(
-            this.transactionCategories[category]
-          ),
+          ammount: ammount,
+          percent: this.formatPercent(ammount / this.totalSpent) + "%",
         });
       });
 
       return result;
+    },
+    expenses() {
+      return this.transactionsGroupedByCategory
+        .filter((transaction) => transaction.ammount < 0)
+        .filter((transaction) => transaction.category !== "creditcard");
     },
   },
 
@@ -182,13 +204,26 @@ export default {
     this.allDataFiles = require.context("./data", true, /./, "sync").keys();
     this.allDataFiles.forEach((fileName) => {
       this.output = `\nLoading ${fileName}`;
-      this.transactions = this.processTxt(
-        require(`raw-loader!./data${fileName.substring(1)}`).default
-      );
+
+      if (fileName.includes(".TAB")) {
+        this.transactions = [
+          ...this.transactions,
+          ...this.processAbnAmroDebitReport(
+            require(`raw-loader!./data${fileName.substring(1)}`).default
+          ),
+        ];
+      } else if (fileName.includes("creditcard")) {
+        this.transactions = [
+          ...this.transactions,
+          ...this.processAbnAmroCreditReport(
+            require(`raw-loader!./data${fileName.substring(1)}`).default
+          ),
+        ];
+      }
     });
   },
   methods: {
-    processTxt(rawTxtData) {
+    processAbnAmroDebitReport(rawTxtData) {
       return rawTxtData
         .split(/\r?\n/)
         .map((row) => {
@@ -221,6 +256,34 @@ export default {
           return row.category !== "internal";
         });
     },
+    processAbnAmroCreditReport(rawTxtData) {
+      return rawTxtData.split(/\r?\n/).map((row) => {
+        let columns = row.split("\t");
+
+        if (columns.length < 7) {
+          return {};
+        }
+
+        let transationInfo = this.findCode(columns[7]);
+        let merchant;
+        let category;
+
+        if (transationInfo) {
+          merchant = transationInfo.name || transationInfo.match;
+          category = transationInfo.category;
+        } else {
+          merchant = "NO_MERCHANT_FOUND";
+          category = "NO_CATEGORY_FOUND";
+        }
+
+        return {
+          ammount: Number(columns[6].replace(/,/g, ".")),
+          date: columns[2],
+          merchant: merchant,
+          category: category,
+        };
+      });
+    },
     findCode(input) {
       return codes.find(function (code) {
         if (typeof code.match === "string") {
@@ -239,6 +302,9 @@ export default {
 
       // return Math.round((totalInCategory / this.totalSpent) * 10000) / 100;
       return Math.round(totalInCategory);
+    },
+    formatPercent(number) {
+      return Math.round(number * 10000) / 100;
     },
   },
 };
