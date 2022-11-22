@@ -6,13 +6,12 @@
 
     <v-main>
       <v-container class="mb-12" v-if="transactions.length">
-        <h1>Expenses</h1>
         <v-tabs
           v-model="expensesTab"
           background-color="primary accent-4 mt-6 rounded-t"
         >
-          <v-tab>By Category</v-tab>
-          <v-tab>By Merchant</v-tab>
+          <v-tab>Expenses</v-tab>
+          <v-tab>All transaction</v-tab>
         </v-tabs>
         <div v-if="expensesTab == 0" class="active-page rounded-b">
           <div class="px-4">
@@ -54,6 +53,30 @@
             </template>
             <template v-slot:expanded-item="{ headers, item }">
               <td :colspan="headers.length" class="pa-12 grey darken-4">
+                <h2 class="mb-2">Transactions grouped by merchant</h2>
+                <v-data-table
+                  :headers="headersForMerchantTable"
+                  :items="
+                    groupTransactionsByMerchant(
+                      transactionCategories[item.category]
+                    )
+                  "
+                  :items-per-page="10000"
+                  sort-by="ammount"
+                  hide-default-footer
+                  class="rounded"
+                  ref="table"
+                >
+                  <template v-slot:item.ammount="{ item }">
+                    {{ item.ammount | price }}
+                  </template>
+                  <template v-slot:item.date="{ item }">
+                    {{ item.date | date }}
+                  </template>
+                  <template v-slot:item.percent="{ item }">
+                    {{ item.percent | percent }}
+                  </template>
+                </v-data-table>
                 <h2 class="mt-6 mb-2">
                   All transactions in {{ item.category }}
                 </h2>
@@ -78,80 +101,25 @@
           </v-data-table>
         </div>
         <div v-else-if="expensesTab == 1" class="active-page pa-6">
+          <v-text-field
+            v-model="expensesSearch"
+            append-icon="mdi-magnify"
+            label="Search"
+            single-line
+            hide-details
+          ></v-text-field>
           <v-data-table
-            :headers="headersForMerchantTable"
-            :items="expensesByMerchant"
-            :single-expand="singleExpand"
-            :expanded.sync="expanded"
-            :items-per-page="expensesByMerchant.length"
+            :headers="headersForAllTransactions"
+            :items="transactions"
+            :items-per-page="transactions.length"
+            :search="expensesSearch"
             sort-by="ammount"
-            item-key="merchant"
-            show-expand
+            item-key="index"
             hide-default-footer
-          >
-            <template v-slot:expanded-item="{ headers, item }">
-              <td :colspan="headers.length" class="pa-12 grey darken-4">
-                <v-data-table
-                  :headers="headersForCategorySubtable"
-                  :items="transactionMerchants[item.merchant]"
-                  :items-per-page="transactionMerchants[item.merchant].length"
-                  sort-by="ammount"
-                  hide-default-footer
-                  class="rounded"
-                ></v-data-table>
-              </td>
-            </template>
-          </v-data-table>
+          ></v-data-table>
         </div>
       </v-container>
       <div v-else>Loading...</div>
-      <!-- <h1>Categories</h1>
-      <v-data-table
-        :headers="headersForCategoriesTable"
-        :items="transactionsGroupedByCategory"
-        :single-expand="singleExpand"
-        :expanded.sync="expanded"
-        item-key="category"
-        show-expand
-      >
-        <template v-slot:top>
-          <v-toolbar flat>
-            <v-toolbar-title>Expandable Table</v-toolbar-title>
-            <v-spacer></v-spacer>
-            <v-switch
-              v-model="singleExpand"
-              label="Single expand"
-              class="mt-2"
-            ></v-switch>
-          </v-toolbar>
-        </template>
-        <template v-slot:expanded-item="{ headers, item }">
-          <td :colspan="headers.length">
-            <v-data-table
-              :headers="headersForCategorySubtable"
-              :items="transactionCategories[item.category]"
-            ></v-data-table>
-          </td>
-        </template>
-      </v-data-table> -->
-      <!-- <v-expansion-panels accordion>
-        <v-expansion-panel
-          v-for="(categoryData, categoryName) in transactionCategories"
-          :key="categoryName"
-        >
-          <v-expansion-panel-header
-            >{{ categoryName }}
-            {{ getTotalForCategory(categoryData) }}</v-expansion-panel-header
-          >
-          <v-expansion-panel-content>
-            <v-data-table
-              :headers="headers"
-              :items="categoryData"
-            ></v-data-table>
-            <pre>{{ categoryData }}</pre>
-          </v-expansion-panel-content>
-        </v-expansion-panel>
-      </v-expansion-panels> -->
     </v-main>
   </v-app>
 </template>
@@ -183,6 +151,13 @@ export default {
       { text: "Percent", value: "percent" },
     ],
     headersForCategorySubtable: [
+      { text: "merchant", value: "merchant" },
+      { text: "ammount", value: "ammount" },
+      { text: "date", value: "date" },
+      { text: "source", value: "source" },
+    ],
+    headersForAllTransactions: [
+      { text: "category", value: "category" },
       { text: "merchant", value: "merchant" },
       { text: "ammount", value: "ammount" },
       { text: "date", value: "date" },
@@ -248,28 +223,8 @@ export default {
 
       return result;
     },
-    transactionsGroupedByMerchant() {
-      let result = [];
-      Object.keys(this.transactionMerchants).forEach((merchant) => {
-        let ammount = this.getTotalForCategory(
-          this.transactionMerchants[merchant]
-        );
-
-        result.push({
-          merchant: merchant,
-          ammount: ammount,
-        });
-      });
-
-      return result;
-    },
     expensesByCategory() {
       return this.transactionsGroupedByCategory.filter(
-        (transaction) => transaction.ammount < 0
-      );
-    },
-    expensesByMerchant() {
-      return this.transactionsGroupedByMerchant.filter(
         (transaction) => transaction.ammount < 0
       );
     },
@@ -326,6 +281,11 @@ export default {
         " " +
         date.getFullYear()
       );
+    },
+  },
+  watch: {
+    expensesTab() {
+      this.expensesSearch = "";
     },
   },
   methods: {
@@ -403,6 +363,33 @@ export default {
           source: "creditcard",
         };
       });
+    },
+    groupTransactionsByMerchant(transactions) {
+      let result = [];
+
+      let totalExpenses = 0;
+
+      const transactionMerchants = {};
+      transactions.forEach((t) => {
+        if (t.ammount < 0) totalExpenses += t.ammount;
+        if (!transactionMerchants[t.merchant]) {
+          transactionMerchants[t.merchant] = t.ammount;
+        } else {
+          transactionMerchants[t.merchant] += t.ammount;
+        }
+      });
+
+      Object.keys(transactionMerchants).forEach((merchant) => {
+        let ammount = transactionMerchants[merchant];
+
+        result.push({
+          merchant: merchant,
+          ammount: Math.round(ammount),
+          percent: ammount / totalExpenses,
+        });
+      });
+
+      return result;
     },
     findCode(input) {
       return codes.find(function (code) {
