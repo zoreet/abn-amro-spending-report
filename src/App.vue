@@ -2,18 +2,30 @@
   <v-app>
     <v-app-bar app color="secondary" dark>
       <div class="d-flex align-center">ABN Amro Spending Report</div>
+      <v-spacer></v-spacer>
+      <template v-if="hasDataLoaded">
+        <div>
+          Debit {{ stats.debit.startDate | date }} -
+          {{ stats.debit.endDate | date }}
+        </div>
+        <div class="px-2">|</div>
+        <div>
+          Creditcard {{ stats.credit.startDate | date }} -
+          {{ stats.credit.endDate | date }}
+        </div>
+      </template>
     </v-app-bar>
 
     <v-main>
-      <v-container class="mb-12" v-if="transactions.length">
+      <div class="mb-12 px-4" v-if="hasDataLoaded">
         <v-tabs
-          v-model="expensesTab"
+          v-model="activeTab"
           background-color="primary accent-4 mt-6 rounded-t"
         >
           <v-tab>Expenses</v-tab>
           <v-tab>All transaction</v-tab>
         </v-tabs>
-        <div v-if="expensesTab == 0" class="active-page rounded-b">
+        <div v-if="activeTab == 0" class="active-page rounded-b">
           <div class="px-4">
             <v-text-field
               v-model="expensesSearch"
@@ -51,6 +63,9 @@
             <template v-slot:item.percent="{ item }">
               {{ (item.ammount / totalSpent) | percent }}
             </template>
+            <template v-slot:item.permonth="{ item }">
+              {{ (item.ammount / monthsInReport) | price }}
+            </template>
             <template v-slot:expanded-item="{ headers, item }">
               <td :colspan="headers.length" class="pa-12 grey darken-4">
                 <h2 class="mb-2">Transactions grouped by merchant</h2>
@@ -76,6 +91,12 @@
                   <template v-slot:item.percent="{ item }">
                     {{ item.percent | percent }}
                   </template>
+                  <template v-slot:item.percent="{ item }">
+                    {{ item.percent | percent }}
+                  </template>
+                  <template v-slot:item.permonth="{ item }">
+                    {{ (item.ammount / monthsInReport) | price }}
+                  </template>
                 </v-data-table>
                 <h2 class="mt-6 mb-2">
                   All transactions in {{ item.category }}
@@ -92,15 +113,15 @@
                   <template v-slot:item.ammount="{ item }">
                     {{ item.ammount | price }}
                   </template>
-                  <template v-slot:item.date="{ item }">
-                    {{ item.date | date }}
+                  <template v-slot:item.permonth="{ item }">
+                    {{ (item.ammount / monthsInReport) | price }}
                   </template>
                 </v-data-table>
               </td>
             </template>
           </v-data-table>
         </div>
-        <div v-else-if="expensesTab == 1" class="active-page pa-6">
+        <div v-else-if="activeTab == 1" class="active-page pa-6">
           <v-text-field
             v-model="expensesSearch"
             append-icon="mdi-magnify"
@@ -116,9 +137,13 @@
             sort-by="ammount"
             item-key="index"
             hide-default-footer
-          ></v-data-table>
+          >
+            <template v-slot:item.date="{ item }">
+              {{ item.date | date }}
+            </template>
+          </v-data-table>
         </div>
-      </v-container>
+      </div>
       <div v-else>Loading...</div>
     </v-main>
   </v-app>
@@ -133,8 +158,8 @@ export default {
   components: {},
 
   data: () => ({
-    reportDuration: 18, //months
-    expensesTab: 0,
+    hasDataLoaded: false,
+    activeTab: 0,
     singleExpand: false,
     expanded: [],
     transactions: [],
@@ -144,11 +169,13 @@ export default {
       { text: "Category", value: "category" },
       { text: "Ammount", value: "ammount" },
       { text: "Percent", value: "percent" },
+      { text: "Month", value: "permonth" },
     ],
     headersForMerchantTable: [
       { text: "Merchant", value: "merchant" },
       { text: "Ammount", value: "ammount" },
       { text: "Percent", value: "percent" },
+      { text: "Month", value: "permonth" },
     ],
     headersForCategorySubtable: [
       { text: "merchant", value: "merchant" },
@@ -157,24 +184,16 @@ export default {
       { text: "source", value: "source" },
     ],
     headersForAllTransactions: [
-      { text: "category", value: "category" },
-      { text: "merchant", value: "merchant" },
-      { text: "ammount", value: "ammount" },
-      { text: "date", value: "date" },
-      { text: "source", value: "source" },
+      { text: "Category", value: "category" },
+      { text: "Merchant", value: "merchant" },
+      { text: "Ammount", value: "ammount" },
+      { text: "Raw", value: "raw" },
+      { text: "Date", value: "date" },
+      { text: "Source", value: "source" },
     ],
   }),
 
   computed: {
-    totalEarned() {
-      return this.transactions.reduce((prev, current) => {
-        if (current && current.ammount > 0) {
-          return prev + current.ammount;
-        }
-
-        return prev;
-      }, 0);
-    },
     totalSpent() {
       return this.expensesByCategory.reduce((prev, current) => {
         if (current && current.ammount < 0) {
@@ -211,21 +230,36 @@ export default {
 
       return result;
     },
-    transactionMerchants() {
-      let result = {};
-
-      this.transactions.forEach((t) => {
-        if (!result[t.merchant]) {
-          result[t.merchant] = [];
-        }
-        result[t.merchant].push(t);
-      });
-
-      return result;
-    },
     expensesByCategory() {
       return this.transactionsGroupedByCategory.filter(
         (transaction) => transaction.ammount < 0
+      );
+    },
+    stats() {
+      const debitTransactions = this.sortTransactionsByDate(
+        this.transactions.filter((t) => t.source === "debit")
+      );
+      const creditTransactions = this.sortTransactionsByDate(
+        this.transactions.filter((t) => t.source === "creditcard")
+      );
+
+      return {
+        debit: {
+          noTransactions: debitTransactions.length,
+          startDate: debitTransactions[0].date,
+          endDate: debitTransactions.pop().date,
+        },
+        credit: {
+          noTransactions: creditTransactions.length,
+          startDate: creditTransactions[0].date,
+          endDate: creditTransactions.pop().date,
+        },
+      };
+    },
+    monthsInReport() {
+      return this.getMonthDiff(
+        this.stats.debit.startDate,
+        this.stats.debit.endDate
       );
     },
   },
@@ -242,19 +276,24 @@ export default {
             require(`raw-loader!./data${fileName.substring(1)}`).default
           ),
         ];
-      } else if (fileName.includes("creditcard")) {
+      } else if (fileName.includes(".txt")) {
         this.transactions = [
           ...this.transactions,
           ...this.processAbnAmroCreditReport(
-            require(`raw-loader!./data${fileName.substring(1)}`).default
+            require(`raw-loader!./data${fileName.substring(1)}`).default,
+            fileName
           ),
         ];
       }
     });
+
+    this.hasDataLoaded = this.transactions.length ? true : false;
   },
   filters: {
     price(number) {
-      return "€" + number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+      let result = Math.round(number * 100) / 100;
+      result = result.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+      return "€" + result;
     },
     percent(number) {
       return Math.round(number * 1000) / 10 + "%";
@@ -274,6 +313,11 @@ export default {
         "November",
         "December",
       ];
+
+      if (typeof date !== "object") {
+        return "!! Invalid date" + date;
+      }
+
       return (
         date.getDate() +
         " " +
@@ -284,7 +328,7 @@ export default {
     },
   },
   watch: {
-    expensesTab() {
+    activeTab() {
       this.expensesSearch = "";
     },
   },
@@ -299,13 +343,13 @@ export default {
             return {};
           }
 
-          let transationInfo = this.findCode(columns[7]);
+          let transactionInfo = this.findCode(columns[7]);
           let merchant;
           let category;
 
-          if (transationInfo) {
-            merchant = transationInfo.name || transationInfo.match;
-            category = transationInfo.category;
+          if (transactionInfo) {
+            merchant = transactionInfo.name || transactionInfo.match;
+            category = transactionInfo.category;
           } else {
             category = "NO_CATEGORY_FOUND";
             merchant = columns[7].substring(
@@ -328,41 +372,82 @@ export default {
             merchant: merchant,
             category: category,
             source: "debit",
+            raw: row,
           };
         })
         .filter((row) => {
           return (
+            row.ammount &&
             row.category !== "ignore" &&
             row.category !== "creditcard" &&
             row.merchant !== "Flatex Bank"
           );
         });
     },
-    processAbnAmroCreditReport(rawTxtData) {
-      return rawTxtData.split(/\r?\n/).map((row) => {
-        let columns = row.split("\t");
-        let transationInfo = this.findCode(columns[1]);
-        let merchant;
-        let category;
-        let date = columns[0].split("/");
-        date = new Date(`${date[2]}-${date[0]}-${date[1]}`);
+    processAbnAmroCreditReport(rawTxtData, fileName) {
+      return rawTxtData
+        .split(/\r?\n/)
+        .map((row) => {
+          let year = fileName.match(/[0-9]+/g)[0];
 
-        if (transationInfo) {
-          merchant = transationInfo.name || transationInfo.match;
-          category = transationInfo.category;
-        } else {
-          merchant = columns[1];
-          category = "NO_CATEGORY_FOUND";
-        }
+          let translateMonths = {
+            jan: "january",
+            feb: "february",
+            mrt: "march",
+            apr: "april",
+            mei: "may",
+            jun: "june",
+            jul: "july",
+            aug: "august",
+            sep: "september",
+            okt: "october",
+            nov: "november",
+            dec: "december",
+          };
 
-        return {
-          ammount: -1 * Number(columns[2].replace(/,/g, ".").replace(/€/g, "")),
-          date: date,
-          merchant: merchant,
-          category: category,
-          source: "creditcard",
-        };
-      });
+          let date = new Date(
+            year +
+              "-" +
+              translateMonths[row.substring(3, 6)] +
+              "-" +
+              row.substring(0, 2)
+          );
+
+          let ammount = row.match(/[0-9]*\.*[0-9]+,[0-9]+/g).pop();
+          ammount = ammount.replace(".", "");
+          ammount = ammount.replace(",", ".");
+          ammount = Number(ammount);
+
+          if (row.endsWith(" Af")) ammount *= -1;
+
+          let transactionInfo = this.findCode(row);
+          let merchant;
+          let category;
+
+          if (transactionInfo) {
+            merchant = transactionInfo.name || transactionInfo.match;
+            category = transactionInfo.category;
+          } else {
+            category = "NO_CATEGORY_FOUND";
+            merchant = row.substring(14, row.length);
+          }
+
+          return {
+            ammount: ammount,
+            date: date,
+            merchant: merchant,
+            category: category,
+            source: "creditcard",
+            raw: row,
+          };
+        })
+        .filter((row) => {
+          return (
+            row.ammount &&
+            !row.merchant.includes("IDEAL BETALING") &&
+            row.category !== "ignore"
+          );
+        });
     },
     groupTransactionsByMerchant(transactions) {
       let result = [];
@@ -392,6 +477,32 @@ export default {
       return result;
     },
     findCode(input) {
+      //overrides
+      if (input.includes("APPLE.COM/BILL ITUNES.COM IRL 109,99")) {
+        return {
+          name: "Squla",
+          category: "kids activities",
+        };
+      }
+      if (input.includes("APPLE.COM/BILL ITUNES.COM IRL 57,99")) {
+        return {
+          name: "Headspace",
+          category: "healthcare",
+        };
+      }
+      if (input.includes("APPLE.COM/BILL ITUNES.COM IRL 14,99")) {
+        return {
+          name: "Apple Music Family",
+          category: "entertainment",
+        };
+      }
+      if (input.includes("APPLE.COM/BILL ITUNES.COM IRL 8,99")) {
+        return {
+          name: "Disney+",
+          category: "entertainment",
+        };
+      }
+
       return codes.find(function (code) {
         if (typeof code.match === "string") {
           return input.toLowerCase().indexOf(code.match.toLowerCase()) !== -1;
@@ -399,6 +510,13 @@ export default {
 
         return code.match.test(input);
       });
+    },
+    getMonthDiff(d1, d2) {
+      var months;
+      months = (d2.getFullYear() - d1.getFullYear()) * 12;
+      months -= d1.getMonth();
+      months += d2.getMonth();
+      return months <= 0 ? 0 : months;
     },
     getTotalForCategory(data) {
       let totalInCategory = data.reduce((prev, current) => {
@@ -408,6 +526,17 @@ export default {
       }, 0);
 
       return Math.round(totalInCategory);
+    },
+    sortTransactionsByDate(transactions) {
+      return transactions.sort((a, b) => {
+        if (a.date < b.date) {
+          return -1;
+        }
+        if (a.date > b.date) {
+          return 1;
+        }
+        return 0;
+      });
     },
   },
 };
@@ -427,6 +556,7 @@ export default {
   padding-bottom: 32px !important;
   padding-top: 12px !important;
   position: relative;
+  white-space: nowrap;
 }
 
 .header-summary {
