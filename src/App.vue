@@ -54,6 +54,9 @@
             </template>
             <template v-slot:expanded-item="{ headers, item }">
               <td :colspan="headers.length" class="pa-12 grey darken-4">
+                <h2 class="mt-6 mb-2">
+                  All transactions in {{ item.category }}
+                </h2>
                 <v-data-table
                   :headers="headersForCategorySubtable"
                   :items="transactionCategories[item.category]"
@@ -61,6 +64,7 @@
                   sort-by="ammount"
                   hide-default-footer
                   class="rounded"
+                  ref="table"
                 >
                   <template v-slot:item.ammount="{ item }">
                     {{ item.ammount | price }}
