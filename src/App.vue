@@ -3,32 +3,45 @@
     <v-app-bar app color="secondary" dark>
       <div class="d-flex align-center">ABN Amro Spending Report</div>
       <v-spacer></v-spacer>
-      <template v-if="hasDataLoaded">
-        <div>
-          Debit {{ stats.debit.startDate | date }} -
-          {{ stats.debit.endDate | date }}
-        </div>
-        <div class="px-2">|</div>
-        <div>
-          Creditcard {{ stats.credit.startDate | date }} -
-          {{ stats.credit.endDate | date }}
-        </div>
-      </template>
     </v-app-bar>
 
     <v-main>
       <div class="mb-12 px-4" v-if="hasDataLoaded">
+        <div class="mt-6 mb-12">
+          <h3>Stats</h3>
+          <ul>
+            <li>
+              <b>{{ transactions.length }}</b> transactions between
+              <b>{{ reportDateRange.startDate | date }}</b> and
+              <b>{{ reportDateRange.endDate | date }}</b>
+              ( {{ reportDateRange.months }}
+              <template v-if="reportDateRange.months == 1">month</template>
+              <template v-else>months</template>
+              )
+            </li>
+            <li>Spent: {{ totalSpent | price }}</li>
+            <li>Earned: {{ totalEarned | price }}</li>
+            <li>
+              Net Total: {{ totalNet | price }}
+              <span v-if="totalNet > 0">🚀🌛</span>
+              <span v-else>😞</span>
+            </li>
+            <!-- <li></li> -->
+          </ul>
+          <!-- {{ report.startDate }} - {{ {{ report.endDate }} }} -->
+        </div>
         <v-tabs
           v-model="activeTab"
           background-color="primary accent-4 mt-6 rounded-t"
         >
-          <v-tab>Expenses</v-tab>
+          <v-tab>Categories</v-tab>
           <v-tab>All transaction</v-tab>
         </v-tabs>
+        <!-- Categories -->
         <div v-if="activeTab == 0" class="active-page rounded-b">
           <div class="px-4">
             <v-text-field
-              v-model="expensesSearch"
+              v-model="categoriesSearch"
               append-icon="mdi-magnify"
               label="Search"
               single-line
@@ -37,11 +50,11 @@
           </div>
           <v-data-table
             :headers="headersForCategoriesTable"
-            :items="expensesByCategory"
+            :items="transactionsGroupedByCategory"
             :single-expand="singleExpand"
             :expanded.sync="expanded"
-            :items-per-page="expensesByCategory.length"
-            :search="expensesSearch"
+            :items-per-page="transactionsGroupedByCategory.length"
+            :search="categoriesSearch"
             sort-by="ammount"
             item-key="category"
             show-expand
@@ -50,12 +63,28 @@
             <template v-slot:header.category="{ header }">
               {{ header.text }}
               <div class="header-summary">
-                {{ expensesByCategory.length }} categories
+                {{ transactionsGroupedByCategory.length }} categories
               </div>
             </template>
             <template v-slot:header.ammount="{ header }">
               {{ header.text }}
               <div class="header-summary">Total {{ totalSpent | price }}</div>
+            </template>
+            <template v-slot:header.permonth="{ header }">
+              {{ header.text }}
+              <div class="header-summary">
+                Avg {{ (totalSpent / reportDateRange.months) | price }}
+              </div>
+            </template>
+            <template v-slot:item.category="{ item }">
+              <b>{{ item.category }}</b
+              >&nbsp;
+              <span class="category-length"
+                >{{
+                  transactionCategories[item.category].length
+                }}
+                transactions</span
+              >
             </template>
             <template v-slot:item.ammount="{ item }">
               {{ item.ammount | price }}
@@ -64,7 +93,7 @@
               {{ (item.ammount / totalSpent) | percent }}
             </template>
             <template v-slot:item.permonth="{ item }">
-              {{ (item.ammount / monthsInReport) | price }}
+              {{ (item.ammount / reportDateRange.months) | price }}
             </template>
             <template v-slot:expanded-item="{ headers, item }">
               <td :colspan="headers.length" class="pa-12 grey darken-4">
@@ -82,6 +111,9 @@
                   class="rounded"
                   ref="table"
                 >
+                  <template v-slot:item.category="{ item }">
+                    {{ item.category }}
+                  </template>
                   <template v-slot:item.ammount="{ item }">
                     {{ item.ammount | price }}
                   </template>
@@ -95,7 +127,7 @@
                     {{ item.percent | percent }}
                   </template>
                   <template v-slot:item.permonth="{ item }">
-                    {{ (item.ammount / monthsInReport) | price }}
+                    {{ (item.ammount / reportDateRange.months) | price }}
                   </template>
                 </v-data-table>
                 <h2 class="mt-6 mb-2">
@@ -114,16 +146,20 @@
                     {{ item.ammount | price }}
                   </template>
                   <template v-slot:item.permonth="{ item }">
-                    {{ (item.ammount / monthsInReport) | price }}
+                    {{ (item.ammount / reportDateRange.months) | price }}
+                  </template>
+                  <template v-slot:item.date="{ item }">
+                    <span class="nowrap">{{ item.date | date }}</span>
                   </template>
                 </v-data-table>
               </td>
             </template>
           </v-data-table>
         </div>
+        <!-- All Transactions -->
         <div v-else-if="activeTab == 1" class="active-page pa-6">
           <v-text-field
-            v-model="expensesSearch"
+            v-model="categoriesSearch"
             append-icon="mdi-magnify"
             label="Search"
             single-line
@@ -133,7 +169,7 @@
             :headers="headersForAllTransactions"
             :items="transactions"
             :items-per-page="transactions.length"
-            :search="expensesSearch"
+            :search="categoriesSearch"
             sort-by="ammount"
             item-key="index"
             hide-default-footer
@@ -164,12 +200,12 @@ export default {
     expanded: [],
     transactions: [],
     allDataFiles: [],
-    expensesSearch: "",
+    categoriesSearch: "",
     headersForCategoriesTable: [
       { text: "Category", value: "category" },
       { text: "Ammount", value: "ammount" },
-      { text: "Percent", value: "percent" },
       { text: "Month", value: "permonth" },
+      { text: "Percent", value: "percent" },
     ],
     headersForMerchantTable: [
       { text: "Merchant", value: "merchant" },
@@ -182,26 +218,39 @@ export default {
       { text: "ammount", value: "ammount" },
       { text: "date", value: "date" },
       { text: "source", value: "source" },
+      { text: "Raw", value: "raw" },
     ],
     headersForAllTransactions: [
       { text: "Category", value: "category" },
       { text: "Merchant", value: "merchant" },
       { text: "Ammount", value: "ammount" },
-      { text: "Raw", value: "raw" },
       { text: "Date", value: "date" },
       { text: "Source", value: "source" },
+      { text: "Raw", value: "raw" },
     ],
   }),
 
   computed: {
+    totalEarned() {
+      return this.transactions.reduce((prev, current) => {
+        if (current && current.ammount > 0) {
+          return prev + current.ammount;
+        }
+
+        return prev;
+      }, 0);
+    },
     totalSpent() {
-      return this.expensesByCategory.reduce((prev, current) => {
+      return this.transactions.reduce((prev, current) => {
         if (current && current.ammount < 0) {
           return prev + current.ammount;
         }
 
         return prev;
       }, 0);
+    },
+    totalNet() {
+      return this.totalSpent + this.totalEarned;
     },
     transactionCategories() {
       let result = {};
@@ -230,37 +279,19 @@ export default {
 
       return result;
     },
-    expensesByCategory() {
-      return this.transactionsGroupedByCategory.filter(
-        (transaction) => transaction.ammount < 0
-      );
-    },
-    stats() {
-      const debitTransactions = this.sortTransactionsByDate(
-        this.transactions.filter((t) => t.source === "debit")
-      );
-      const creditTransactions = this.sortTransactionsByDate(
-        this.transactions.filter((t) => t.source === "creditcard")
-      );
+    reportDateRange() {
+      const startDate = this.transactions[0].date;
+      const endDate = [...this.transactions].pop().date;
+
+      const monthDiff = endDate.getMonth() - startDate.getMonth();
+      const yearDiff = endDate.getYear() - startDate.getYear();
+      const months = monthDiff + yearDiff * 12;
 
       return {
-        debit: {
-          noTransactions: debitTransactions.length,
-          startDate: debitTransactions[0].date,
-          endDate: debitTransactions.pop().date,
-        },
-        credit: {
-          noTransactions: creditTransactions.length,
-          startDate: creditTransactions[0].date,
-          endDate: creditTransactions.pop().date,
-        },
+        startDate,
+        endDate,
+        months,
       };
-    },
-    monthsInReport() {
-      return this.getMonthDiff(
-        this.stats.debit.startDate,
-        this.stats.debit.endDate
-      );
     },
   },
 
@@ -285,6 +316,10 @@ export default {
           ),
         ];
       }
+    });
+
+    this.transactions = [...this.transactions].sort((a, b) => {
+      return new Date(a.date) - new Date(b.date);
     });
 
     this.hasDataLoaded = this.transactions.length ? true : false;
@@ -329,7 +364,7 @@ export default {
   },
   watch: {
     activeTab() {
-      this.expensesSearch = "";
+      this.categoriesSearch = "";
     },
   },
   methods: {
@@ -452,11 +487,11 @@ export default {
     groupTransactionsByMerchant(transactions) {
       let result = [];
 
-      let totalExpenses = 0;
+      let total = 0;
 
       const transactionMerchants = {};
       transactions.forEach((t) => {
-        if (t.ammount < 0) totalExpenses += t.ammount;
+        if (t.ammount < 0) total += t.ammount;
         if (!transactionMerchants[t.merchant]) {
           transactionMerchants[t.merchant] = t.ammount;
         } else {
@@ -470,7 +505,7 @@ export default {
         result.push({
           merchant: merchant,
           ammount: Math.round(ammount),
-          percent: ammount / totalExpenses,
+          percent: ammount / total,
         });
       });
 
@@ -527,17 +562,6 @@ export default {
 
       return Math.round(totalInCategory);
     },
-    sortTransactionsByDate(transactions) {
-      return transactions.sort((a, b) => {
-        if (a.date < b.date) {
-          return -1;
-        }
-        if (a.date > b.date) {
-          return 1;
-        }
-        return 0;
-      });
-    },
   },
 };
 </script>
@@ -564,5 +588,15 @@ export default {
   font-weight: 400;
   position: absolute;
   bottom: 12px;
+}
+
+.category-length {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 </style>
